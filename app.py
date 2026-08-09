@@ -7,21 +7,32 @@ app = Flask(__name__)
 
 # Create database if it doesn't exist
 DB_NAME = 'urls.db'
-conn = sqlite3.connect(DB_NAME, check_same_thread=False)
-c = conn.cursor()
-c.execute(
-    '''
-CREATE TABLE IF NOT EXISTS urls (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    short_code TEXT UNIQUE,
-    long_url TEXT
-)
-'''
-)
-conn.commit()
 
 
-# Function to generate short code
+def get_db_connection():
+  conn = sqlite3.connect(DB_NAME, check_same_thread=False)
+  conn.row_factory = sqlite3.Row
+  return conn
+
+
+def init_db():
+  conn = get_db_connection()
+  conn.execute('''
+        CREATE TABLE IF NOT EXISTS urls (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            short_code TEXT UNIQUE,
+            long_url TEXT
+        )
+    ''')
+  conn.commit()
+  conn.close()
+
+
+# Initialize the database on startup
+init_db()
+
+
+# Function to generate a unique short code
 def generate_short_code(length=6):
   return ''.join(
       random.choices(string.ascii_letters + string.digits, k=length)
@@ -31,46 +42,53 @@ def generate_short_code(length=6):
 # Home page to submit URL
 @app.route('/', methods=['GET', 'POST'])
 def home():
+  short_url = None
   if request.method == 'POST':
-    long_url = request.form['long_url'].strip()
+    long_url = request.form.get('long_url', '').strip()
 
-    # Validate URL
-    if not (
-        long_url.startswith('http://') or long_url.startswith('https://')
-    ):
-      long_url = 'http://' + long_url
+    if long_url:
+      # Validate URL protocol
+      if not (
+          long_url.startswith('http://') or long_url.startswith('https://')
+      ):
+        long_url = 'http://' + long_url
 
-    short_code = generate_short_code()
-
-    # Save to DB
-    try:
-      c.execute(
-          'INSERT INTO urls (short_code, long_url) VALUES (?, ?)',
-          (short_code, long_url),
-      )
-      conn.commit()
-    except sqlite3.IntegrityError:
-      # In rare case code already exists
+      conn = get_db_connection()
       short_code = generate_short_code()
-      c.execute(
+
+      # Ensure the short code is completely unique
+      while (
+          conn.execute(
+              'SELECT id FROM urls WHERE short_code = ?', (short_code,)
+          ).fetchone()
+          is not None
+      ):
+        short_code = generate_short_code()
+
+      # Save to DB
+      conn.execute(
           'INSERT INTO urls (short_code, long_url) VALUES (?, ?)',
           (short_code, long_url),
       )
       conn.commit()
+      conn.close()
 
-    short_url = request.host_url + short_code
-    return render_template('index.html', short_url=short_url)
+      short_url = request.host_url + short_code
 
-  return render_template('index.html', short_url=None)
+  return render_template('index.html', short_url=short_url)
 
 
 # Redirect route
 @app.route('/<short_code>')
 def redirect_short_url(short_code):
-  c.execute('SELECT long_url FROM urls WHERE short_code = ?', (short_code,))
-  result = c.fetchone()
+  conn = get_db_connection()
+  result = conn.execute(
+      'SELECT long_url FROM urls WHERE short_code = ?', (short_code,)
+  ).fetchone()
+  conn.close()
+
   if result:
-    return redirect(result[0])
+    return redirect(result['long_url'])
   return 'URL not found', 404
 
 
