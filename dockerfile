@@ -14,4 +14,4 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY . .
 
 # Set the default command to run when the container starts
-CMD ["python3", "-m", "http.server", "5000"]
+CMD ["python3", "app.py"]
