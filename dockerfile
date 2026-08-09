@@ -1,17 +1,24 @@
-# Use the official Debian 13 (Trixie) stable release image
+# Use the official lightweight Debian 13 (Trixie) stable release image
 FROM debian:13-slim
 
-# Set working directory inside the container
+# Set the working directory inside the container
 WORKDIR /app
 
-# Update package lists and install basic tools or dependencies safely
+# Install Python and pip safely via apt
 RUN apt-get update && apt-get install -y --no-install-recommends \
     python3 \
     python3-pip \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy your project files into the container
+# Copy requirements and install dependencies
+COPY requirements.txt .
+RUN pip3 install --no-cache-dir -r requirements.txt --break-system-packages
+
+# Copy the rest of the application files (app.py, templates, etc.)
 COPY . .
 
-# Set the default command to run when the container starts
+# Expose port 5000 for Flask
+EXPOSE 5000
+
+# Command to run your Flask application
 CMD ["python3", "app.py"]
